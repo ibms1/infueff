@@ -4,91 +4,128 @@ import numpy as np
 import tempfile
 import cv2
 import os
+import base64
 
 def apply_effects(image, effect):
-    if effect == "قزم":
+    if effect == "Dwarf":
         return image.resize((int(image.width), int(image.height / 2)))
-    elif effect == "عملاق":
+    elif effect == "Giant":
         return image.resize((int(image.width), int(image.height * 2)))
-    elif effect == "ملون وخلفية رمادية":
-        # تحويل الصورة إلى رمادية
+    elif effect == "Grayscale Background":
+        # Convert image to grayscale
         gray_image = np.array(image.convert("L"))
-        # نسخ الصورة الرمادية إلى القنوات الثلاث
+        # Copy the grayscale image to all three channels
         result = np.stack((gray_image,) * 3, axis=-1)
         return Image.fromarray(result)
-    elif effect == "خلفية نارية":
+    elif effect == "Fire Background":
         fire_image = np.array(image)
-        fire_overlay = np.full(fire_image.shape, [255, 0, 0], dtype=np.uint8)  # لون ناري
+        fire_overlay = np.full(fire_image.shape, [255, 0, 0], dtype=np.uint8)  # Fire color
         blended = cv2.addWeighted(fire_image, 0.7, fire_overlay, 0.3, 0)
         return Image.fromarray(blended)
-    elif effect == "خلفية جليدية":
+    elif effect == "Ice Background":
         ice_image = np.array(image)
-        ice_overlay = np.full(ice_image.shape, [173, 216, 230], dtype=np.uint8)  # لون جليدي
+        ice_overlay = np.full(ice_image.shape, [173, 216, 230], dtype=np.uint8)  # Ice color
         blended = cv2.addWeighted(ice_image, 0.7, ice_overlay, 0.3, 0)
         return Image.fromarray(blended)
     return image
 
-st.title("تطبيق مؤثرات الفيديو")
+def get_download_link(file_path, file_name):
+    """Generate a download link for a file"""
+    with open(file_path, 'rb') as f:
+        data = f.read()
+    b64 = base64.b64encode(data).decode()
+    href = f'<a href="data:video/mp4;base64,{b64}" download="{file_name}">Download Processed Video</a>'
+    return href
 
-uploaded_file = st.file_uploader("اختر ملف فيديو", type=["mp4", "mov"])
+st.title("Video Effects Application")
+
+uploaded_file = st.file_uploader("Choose a video file", type=["mp4", "mov"])
 
 if uploaded_file is not None:
-    # حفظ الملف المرفوع مؤقتًا
+    # Save the uploaded file temporarily
     tfile = tempfile.NamedTemporaryFile(delete=False)
     tfile.write(uploaded_file.read())
     
-    # فتح الفيديو باستخدام المسار المؤقت
+    # Open the video using the temporary path
     video_capture = cv2.VideoCapture(tfile.name)
     
     if not video_capture.isOpened():
-        st.error("فشل في فتح الفيديو.")
+        st.error("Failed to open the video.")
     else:
-        effect = st.selectbox("اختر المؤثر", ["قزم", "عملاق", "ملون وخلفية رمادية", "خلفية نارية", "خلفية جليدية"])
+        effect = st.selectbox("Choose Effect", ["Dwarf", "Giant", "Grayscale Background", "Fire Background", "Ice Background"])
         fps = video_capture.get(cv2.CAP_PROP_FPS)
         
-        if st.button("تطبيق المؤثر"):
-            with st.spinner("يتم معالجة الفيديو..."):
+        if st.button("Apply Effect"):
+            with st.spinner("Processing video..."):
                 frames = []
                 while True:
                     ret, frame = video_capture.read()
                     if not ret:
                         break
                     
-                    # تحويل الإطار إلى صيغة RGB
+                    # Convert frame to RGB format
                     image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
                     
-                    # تطبيق المؤثر
+                    # Apply the effect
                     processed_image = apply_effects(image, effect)
                     
-                    # إضافة الإطار المعالج إلى القائمة
+                    # Add the processed frame to the list
                     frames.append(np.array(processed_image))
                 
-                # إغلاق الفيديو الأصلي
+                # Close the original video
                 video_capture.release()
                 
                 if frames:
-                    # حفظ الفيديو الناتج
+                    # Save the processed video
                     output_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
                     
-                    # الحصول على أبعاد الإطار المعالج
+                    # Get the dimensions of the processed frame
                     height, width = frames[0].shape[:2]
                     
-                    # إنشاء كاتب الفيديو
+                    # Create video writer
                     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
                     out = cv2.VideoWriter(output_file.name, fourcc, fps if fps > 0 else 20.0, (width, height))
                     
-                    # كتابة الإطارات
+                    # Write frames
                     for frame in frames:
-                        # التأكد من أن الإطار بصيغة BGR قبل الكتابة
+                        # Make sure the frame is in BGR format before writing
                         out.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
                     
-                    # إغلاق كاتب الفيديو
+                    # Close the video writer
                     out.release()
                     
-                    # عرض الفيديو الناتج
+                    # Display the processed video
                     st.video(output_file.name)
+                    
+                    # Create a download button
+                    download_filename = f"processed_{uploaded_file.name}" if hasattr(uploaded_file, 'name') else "processed_video.mp4"
+                    st.markdown(get_download_link(output_file.name, download_filename), unsafe_allow_html=True)
                 else:
-                    st.error("لم يتم التقاط أي إطارات من الفيديو.")
+                    st.error("No frames were captured from the video.")
     
-    # حذف الملف المؤقت
+    # Delete the temporary file
     os.unlink(tfile.name)
+
+
+
+
+
+    hide_streamlit_style = """
+            <style>
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            .stDeployButton {display:none;}
+            #stStreamlitLogo {display: none;}
+            a {
+                text-decoration: none;
+                color: inherit;
+                pointer-events: none;
+            }
+            a:hover {
+                text-decoration: none;
+                color: inherit;
+                cursor: default;
+            }
+            </style>
+            """
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
