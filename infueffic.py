@@ -5,6 +5,7 @@ import tempfile
 import cv2
 import os
 import base64
+from pathlib import Path
 
 def apply_effects(image, effect):
     if effect == "Dwarf":
@@ -29,13 +30,16 @@ def apply_effects(image, effect):
         return Image.fromarray(blended)
     return image
 
-def get_download_link(file_path, file_name):
-    """Generate a download link for a file"""
-    with open(file_path, 'rb') as f:
+def get_binary_file_downloader_html(bin_file, file_label='File'):
+    with open(bin_file, 'rb') as f:
         data = f.read()
-    b64 = base64.b64encode(data).decode()
-    href = f'<a href="data:video/mp4;base64,{b64}" download="{file_name}">Download Processed Video</a>'
+    bin_str = base64.b64encode(data).decode()
+    href = f'<a href="data:application/octet-stream;base64,{bin_str}" download="{os.path.basename(bin_file)}">Download {file_label}</a>'
     return href
+
+# Initialize session state variables if they don't exist
+if 'processed_video_path' not in st.session_state:
+    st.session_state.processed_video_path = None
 
 st.title("Video Effects Application")
 
@@ -43,11 +47,13 @@ uploaded_file = st.file_uploader("Choose a video file", type=["mp4", "mov"])
 
 if uploaded_file is not None:
     # Save the uploaded file temporarily
-    tfile = tempfile.NamedTemporaryFile(delete=False)
+    tfile = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
     tfile.write(uploaded_file.read())
+    tfile_path = tfile.name
+    tfile.close()
     
     # Open the video using the temporary path
-    video_capture = cv2.VideoCapture(tfile.name)
+    video_capture = cv2.VideoCapture(tfile_path)
     
     if not video_capture.isOpened():
         st.error("Failed to open the video.")
@@ -76,15 +82,16 @@ if uploaded_file is not None:
                 video_capture.release()
                 
                 if frames:
-                    # Save the processed video
-                    output_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
+                    # Create a more permanent temporary file
+                    temp_dir = Path(tempfile.gettempdir())
+                    output_path = str(temp_dir / f"processed_video_{hash(tfile_path)}.mp4")
                     
                     # Get the dimensions of the processed frame
                     height, width = frames[0].shape[:2]
                     
                     # Create video writer
                     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-                    out = cv2.VideoWriter(output_file.name, fourcc, fps if fps > 0 else 20.0, (width, height))
+                    out = cv2.VideoWriter(output_path, fourcc, fps if fps > 0 else 20.0, (width, height))
                     
                     # Write frames
                     for frame in frames:
@@ -94,19 +101,26 @@ if uploaded_file is not None:
                     # Close the video writer
                     out.release()
                     
-                    # Display the processed video
-                    st.video(output_file.name)
-                    
-                    # Create a download button
-                    download_filename = f"processed_{uploaded_file.name}" if hasattr(uploaded_file, 'name') else "processed_video.mp4"
-                    st.markdown(get_download_link(output_file.name, download_filename), unsafe_allow_html=True)
+                    # Store the output path in session state
+                    st.session_state.processed_video_path = output_path
                 else:
                     st.error("No frames were captured from the video.")
     
-    # Delete the temporary file
-    os.unlink(tfile.name)
+    # Clean up the original uploaded file
+    os.unlink(tfile_path)
 
-
+# Display the processed video if it exists
+if st.session_state.processed_video_path and os.path.exists(st.session_state.processed_video_path):
+    st.subheader("Processed Video")
+    st.video(st.session_state.processed_video_path)
+    
+    # Create download button for the processed video
+    st.subheader("Download")
+    download_filename = "processed_video.mp4"
+    st.markdown(
+        get_binary_file_downloader_html(st.session_state.processed_video_path, download_filename), 
+        unsafe_allow_html=True
+    )
 
 
 
